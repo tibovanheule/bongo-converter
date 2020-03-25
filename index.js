@@ -22,7 +22,7 @@ prompt.get(prompt_attributes, (err, result) => {
         let parser = new xml2js.Parser(),
             chat = result.chat.toLowerCase() === "yes",
             path = "C:\\Users\\seven\\Desktop\\meetingFiles",
-            cache = result.cache.toLowerCase() === "yes";
+            cache = result.cache.toLowerCase() === "yes" | true;
 
         //conversie xml to json
         console.log("reading xml-data from:" + path + "/events.xml");
@@ -39,32 +39,31 @@ prompt.get(prompt_attributes, (err, result) => {
                     resize_images(events, path).then(async (images) => {
                         console.log("Done reading\nPreparing video conversion, this could take a while");
 
-                        let splitimmages = [], step = 10;
-                        while (images.length !== 0) {
-                            if (images.length < step) {
-                                splitimmages.push(images.splice(0, images.length))
-                            } else {
-                                splitimmages.push(images.splice(0, step))
-                            }
-                        }
                         let video = [];
-                        for (let i = 0; i < splitimmages.length; i++) {
-                            if (cache || !fs.existsSync(`${path}/tempp${i}.mp4`)) {
-                                video.push(await images_to_viceo(splitimmages[i], path, i));
+
+                        for (let i = 0; i < images.length; i++) {
+                            if (cache|| !fs.existsSync(`${path}/tempp${i}.mp4`)) {
+                                let loop = images[i].loop, imag = [{path: images[i].path, loop: 1}];
+                                await images_to_viceo(imag, path, i);
+                                let ffmpegCommand = ffmpeg_command().input(`${path}/tempp${i}.mp4`).inputOptions([`-stream_loop ${Math.abs(Math.round(loop))}`]);
+                                await ffmpegCommand.save(`${path}/finaltempp${i}.mp4`);
+                                video.push(`${path}/finaltempp${i}.mp4`);
                             }
-                            console.log(i / splitimmages.length)
+                            console.log(i / images.length * 100)
                         }
-                        console.log(video);
 
-                        let concat_video = video.reduce((result,input)=>result.input(input),ffmpeg_command());
-                        concat_video.addOption('-c copy');
-                        concat_video.mergeToFile(`${path}/tempPresentation2.mp4`);
 
-                        let command = ffmpeg_command();
+                        let concat_video = video.reduce((result, input) => result.input(input), ffmpeg_command());
+                        concat_video.addOptions(['-threads 2','-c copy']);
+                        await concat_video.mergeToFile(`${path}/tempPresentation2.mp4`);
+
+                        /*let command = ffmpeg_command();
                         command.addOption('-c copy');
                         command.input(`${path}/tempPresentation2.mp4`).inputOption('-hwaccel auto');
                         command.addOption(`--vf "movie=${path}/__157180_6828003742b85dddddfb4e14279dc527.mp4 [a]; [in][a] overlay=0:32 [c]`);
                         command.save(`${path}/${name}.mp4`);
+
+                         */
 
 
                         //let chainedInputs = inputlist.reduce((result, inputItem) => result.addInput(inputItem), ffmpeg_command());
@@ -89,7 +88,6 @@ function ffmpeg_command() {
         .on('error', (err) => console.log('An error occurred: ' + err.message))
         .on('end', () => console.log(`Processing finished!`))
         .on('progress', (p) => console.log(p.timemark))
-        .on('start', (c) => console.log('starting', c))
         .addOption('-preset ultrafast');
 }
 
@@ -111,13 +109,11 @@ function images_to_viceo(images, path, i) {
     };
     return new Promise((resolve, reject) => {
         videoshow(images, videoOptions)
-            .option('-s 8')
             .option('-preset ultrafast')
             .save(`${path}/tempp${i}.mp4`)
             .on('start', (v) => console.log(v, `\ntempp${i}`))
             .on('error', reject)
-            .on('end', () =>
-                resolve(`${path}/tempp${i}.mp4`))
+            .on('end', () => resolve(`${path}/tempp${i}.mp4`))
     })
 }
 
