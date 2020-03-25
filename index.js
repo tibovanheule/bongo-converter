@@ -37,13 +37,14 @@ prompt.get(prompt_attributes, (err, result) => {
                     let events = json.event;
                     events = events.filter(item => keptEvents.includes(item['$'].eventname));
                     resize_images(events, path).then(async (images) => {
-                        console.log("Done reading\nPreparing video conversion, this could take a while");
+                        console.log("Done reading\nPreparing image to video conversion");
 
-                        let video = [];
+                        let video = [], loopSum = 0;
 
                         for (let i = 0; i < images.length; i++) {
-                            if (cache|| !fs.existsSync(`${path}/tempp${i}.mp4`)) {
+                            if (cache || !fs.existsSync(`${path}/tempp${i}.mp4`)) {
                                 let loop = images[i].loop, imag = [{path: images[i].path, loop: 1}];
+                                loopSum += loop;
                                 await images_to_viceo(imag, path, i);
                                 let ffmpegCommand = ffmpeg_command().input(`${path}/tempp${i}.mp4`).inputOptions([`-stream_loop ${Math.abs(Math.round(loop))}`]);
                                 await ffmpegCommand.save(`${path}/finaltempp${i}.mp4`);
@@ -51,10 +52,11 @@ prompt.get(prompt_attributes, (err, result) => {
                             }
                             console.log(i / images.length * 100)
                         }
+                        console.log(loopSum);
 
 
                         let concat_video = video.reduce((result, input) => result.input(input), ffmpeg_command());
-                        concat_video.addOptions(['-threads 2','-c copy']);
+                        concat_video.addOptions(['-threads 2', '-c copy']);
                         await concat_video.mergeToFile(`${path}/tempPresentation2.mp4`);
 
                         /*let command = ffmpeg_command();
@@ -104,14 +106,12 @@ function get_all_unique_event_names(events) {
 function images_to_viceo(images, path, i) {
     let videoOptions = {
         transition: false,
-        hwaccel: "auto",
-
     };
     return new Promise((resolve, reject) => {
         videoshow(images, videoOptions)
             .option('-preset ultrafast')
+            .option('-threads 2')
             .save(`${path}/tempp${i}.mp4`)
-            .on('start', (v) => console.log(v, `\ntempp${i}`))
             .on('error', reject)
             .on('end', () => resolve(`${path}/tempp${i}.mp4`))
     })
