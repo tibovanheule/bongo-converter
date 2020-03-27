@@ -30,6 +30,14 @@ prompt.get(prompt_attributes, async (err, result) => {
         //conversie xml to json
         console.log("reading xml-data from: " + path + "/meetingFiles/events.xml");
 
+        // vind de ndige bestanden
+        let test = fs.readFileSync(path + '/spa-build/index.html',"utf8");
+        let index = test.toString().indexOf("data-path=\"video\">../meetingFiles/");
+        // hou enkel het relevante smijt de rest gewoon weg
+        test = test.slice(index,index+500);
+        let webcamvideo = test.toString().match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
+        let screenvideo = test.toString().match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
+
         // read events
         let json = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
 
@@ -58,13 +66,12 @@ prompt.get(prompt_attributes, async (err, result) => {
                 .mergeToFile(`${path}/temp/tempPresentation2.mp4`))
         );
 
-        //let test = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
-
         if (!webcam) {
             FfmpegCommand()
                 .addOption('-c copy')
                 .input(`${path}/temp/tempPresentation2.mp4`)
-                .input(`${path}/meetingFiles/__157180_6828003742b85dddddfb4e14279dc527.mp4`)
+                .input(`${path}/meetingFiles/${webcamvideo}`)
+                // enkel audio toevoegen
                 .addOptions(['-map 0:v', '-map 1:a'])
                 .save(`${path}/${name}.mp4`);
         }
@@ -81,16 +88,16 @@ function get_all_unique_event_names(events) {
     console.log(unique);
 }
 
-function images_to_video(images, path, i) {
+function images_to_video(images, i, name) {
     let videoOptions = {
         transition: false,
     };
     return new Promise((resolve, reject) => {
         videoshow([images], videoOptions)
             .option('-preset ultrafast')
-            .save(`${path}/temp/tempp${i}.mp4`)
+            .save(name)
             .on('error', reject)
-            .on('end', () => resolve(`${path}/temp/tempp${i}.mp4`))
+            .on('end', () => resolve(name))
     })
 }
 
@@ -100,11 +107,6 @@ async function handle_events(events, path, chat, name) {
     bar1.start(events.length, 0);
     for (let i = 0; i < events.length; i++) {
         let item = events[i];
-        if (i === 0) {
-            let image = "./default.png";
-            let time = find_next(events, i, ["GotoSlideEvent", "StartDeskshareEvent", "SharePresentationEvent"]) - item['$'].timestamp;
-            images.push({path: image, loop: 1, ignored_loop_param: time});
-        }
         switch (item['$'].eventname) {
             case "SharePresentationEvent": {
                 picture = path + "/meetingFiles/presentation/" + item.presentationName + "/";
@@ -194,16 +196,16 @@ function make_video(images, path, cache, check) {
                     let test, loop = (images[i].ignored_loop_param) / 1000;
                     if (loop < 1) {
                         test = {path: images[i].path, loop: loop};
-                        await images_to_video(images[i], path, i);
+                        await images_to_video(images[i], i, `${path}/temp/finaltempp${i}.mp4`);
                     } else {
                         test = images[i];
                         loop -= 1;
-                        await images_to_video(images[i], path, i);
+                        await images_to_video(images[i], i, `${path}/temp/tempp${i}.mp4`);
                         await video_ffmpeg_loop_promise(path, loop, i);
                     }
                 } else {
                     let loop = (images[i].ignored_loop_param - 1000) / 1000;
-                    await images_to_video(images[i], path, i);
+                    await images_to_video(images[i], i, `${path}/temp/tempp${i}.mp4`);
                     await video_ffmpeg_loop_promise(path, loop, i);
                 }
             }
