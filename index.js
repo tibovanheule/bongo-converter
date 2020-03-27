@@ -3,82 +3,73 @@ const fs = require('fs'),
     FfmpegCommand = require('fluent-ffmpeg'),
     prompt = require('prompt'),
     videoshow = require('videoshow'),
-    Subtitle = require('subtitle'),
+    cliProgress = require('cli-progress'),
     //sharp = require('sharp'),
-    keptEvents = ["SharePresentationEvent", "GotoSlideEvent", "StartDeskShareEvent"],
+    keptEvents = ["SharePresentationEvent", "GotoSlideEvent", "StartDeskshareEvent", "DeskShareStartRTMP", "DeskShareStopRTMP"],
     prompt_attributes = [
         {name: 'path', description: 'path to bongo download.'},
-        {name: 'chat', description: "type yes to include chat in conversion."},
-        {name: 'cache', description: "Overwrite cache if exist?"}
+        {name: 'chat', description: "type yes to output chat as subtitle. (default:yes)", default: "yes"},
+        {name: 'cache', description: "Overwrite cache if exist? (default:no)", default: "no"},
+        {name: 'webcam', description: "Should webcam footage be included? (default:no)", default: "no"}
     ];
 
 prompt.start();
 
 // Prompt and get user input then display those data in console.
 prompt.get(prompt_attributes, async (err, result) => {
-    if (err) {
-        console.log(err);
-        return 1;
-    } else {
+    if (err) return 1;
+    else {
         let parser = new xml2js.Parser(),
             chat = result.chat.toLowerCase() === "yes",
-            path = result.path.toString() === "" ? "C:\\Users\\seven\\Desktop\\meetingFiles" : result.path,
-            cache = result.cache.toLowerCase() === "yes" | true;
-        if (chat) keptEvents.push("PublicChatEvent");
+            path = result.path.toString() === "" ? "C:\\Users\\seven\\Desktop" : result.path,
+            cache = result.cache.toLowerCase() === "yes",
+            webcam = result.webcam.toLowerCase() === "yes";
+        if (!fs.existsSync(path + "/temp")) fs.mkdirSync(path + "/temp/");
 
+        if (chat) keptEvents.push("PublicChatEvent");
         //conversie xml to json
-        console.log("reading xml-data from: " + path + "/events.xml");
+        console.log("reading xml-data from: " + path + "/meetingFiles/events.xml");
 
         // read events
-        let json = (await parser.parseStringPromise(fs.readFileSync(path + '/events.xml'))).recording;
+        let json = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
 
-        //read metadata
-        let metadata = (await parser.parseStringPromise(fs.readFileSync(path + '/metadata.xml'))).recording;
-        let endtime = metadata.end_time[0],
-            startime = metadata.start_time[0],
-            name = json.meeting[0]['$'].name,
+        let name = json.meeting[0]['$'].name,
             events = json.event;
+
         //keep only relevent events for processing, let's save some memory
         events = events.filter(item => keptEvents.includes(item['$'].eventname));
 
-        // alle nodige images verkrijgen + chat regelen indien nodig
-        let images = await handle_events(events, path, chat);
+
+        // alle nodige images verkrijgen + chat regelen
+        let images = await handle_events(events, path, chat, name);
 
         console.log("Done reading xml \nPreparing image to video conversion");
 
-        make_images(images, path, cache, endtime-startime).then((video) => {
-            let concat_video = video.reduce((result, input) => result.input(input), ffmpeg_command());
-            concat_video.addOptions(['-threads 4', '-c copy']);
-            concat_video.mergeToFile(`${path}/tempPresentation2.mp4`);
-        })
+        //maak van elke afbeelding een gepaste video dan mergen naar 1 groot bestand
+        let videos = await make_video(images, path, cache);
+        console.log("Merging all videos");
+        await (new Promise((resolve, reject) => videos.reduce((result, input) => result.input(input), FfmpegCommand())
+                .format('mp4')
+                .on('end', resolve)
+                .on('error', (err) => reject('An error occurred: ' + err.message))
+                .on('progress', (p) => console.log(p.timemark))
+                .addOption('-preset ultrafast')
+                .addOptions(['-threads 4'])
+                .mergeToFile(`${path}/temp/tempPresentation2.mp4`))
+        );
 
+        //let test = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
 
-        /*let command = ffmpeg_command();
-        command.addOption('-c copy');
-        command.input(`${path}/tempPresentation2.mp4`).inputOption('-hwaccel auto');
-        command.addOption(`--vf "movie=${path}/__157180_6828003742b85dddddfb4e14279dc527.mp4 [a]; [in][a] overlay=0:32 [c]`);
-        command.save(`${path}/${name}.mp4`);
-
-         */
-
-
-        //let chainedInputs = inputlist.reduce((result, inputItem) => result.addInput(inputItem), ffmpeg_command());
-        //chainedInputs.mergeToFile(`${path}/tempPresentation.mp4`);
-
-        // new ffmpeg command voor mergen webcam, audio en presentatie
-
+        if (!webcam) {
+            FfmpegCommand()
+                .addOption('-c copy')
+                .input(`${path}/temp/tempPresentation2.mp4`)
+                .input(`${path}/meetingFiles/__157180_6828003742b85dddddfb4e14279dc527.mp4`)
+                .addOptions(['-map 0:v', '-map 1:a'])
+                .save(`${path}/${name}.mp4`);
+        }
     }
 });
-
-
-//new ffmpeg command
-function ffmpeg_command() {
-    return new FfmpegCommand()
-        .format('mp4')
-        .on('error', (err) => console.log('An error occurred: ' + err.message))
-        .on('end', () => console.log(`Processing finished!`))
-        .addOption('-preset ultrafast');
-}
 
 //Quick and dirty helpers function to get all unique eventsnames
 function get_all_unique_event_names(events) {
@@ -90,28 +81,37 @@ function get_all_unique_event_names(events) {
     console.log(unique);
 }
 
-function images_to_viceo(images, path, i) {
+function images_to_video(images, path, i) {
     let videoOptions = {
         transition: false,
     };
     return new Promise((resolve, reject) => {
         videoshow([images], videoOptions)
             .option('-preset ultrafast')
-            .option('-threads 2')
-            .save(`${path}/tempp${i}.mp4`)
+            .save(`${path}/temp/tempp${i}.mp4`)
             .on('error', reject)
-            .on('end', () => resolve(`${path}/tempp${i}.mp4`))
+            .on('end', () => resolve(`${path}/temp/tempp${i}.mp4`))
     })
 }
 
-async function handle_events(events, path, chat) {
-    let res, picture = "", images = [], first = events[0]['$'].timestamp, times = [];
+async function handle_events(events, path, chat, name) {
+    let picture = "", images = [], chatmessages = [], chatCount = 1;
+    const bar1 = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
+    bar1.start(events.length, 0);
     for (let i = 0; i < events.length; i++) {
         let item = events[i];
-
+        if (i === 0) {
+            let image = "./default.png";
+            let time = find_next(events, i, ["GotoSlideEvent", "StartDeskshareEvent", "SharePresentationEvent"]) - item['$'].timestamp;
+            images.push({path: image, loop: 1, ignored_loop_param: time});
+        }
         switch (item['$'].eventname) {
             case "SharePresentationEvent": {
-                picture = path + "/presentation/" + item.presentationName + "/";
+                picture = path + "/meetingFiles/presentation/" + item.presentationName + "/";
+                let image = picture + "slide-1.png";
+                let time = find_next(events, i, ["GotoSlideEvent", "StartDeskshareEvent", "SharePresentationEvent"]) - item['$'].timestamp;
+                // de min 1 is voor hoe stream_loop van ffpmeg werkt te corrigeren
+                images.push({path: image, loop: 1, video_ignored: false, ignored_loop_param: time});
                 break;
             }
             case "GotoSlideEvent": {
@@ -123,56 +123,99 @@ async function handle_events(events, path, chat) {
                                     }).toFile(image, () => console.log("resized image: " + image));
                                 });
                 */
-                let time = ((find_next_slide(events, i)) - (item['$'].timestamp));
-                times.push(time);
-
-                //find_next_slide(events,i)-item['$'].timestamp
-                images.push({path: image, loop: 1, ignored_loop_param: time-1});
+                let time = find_next(events, i, ["GotoSlideEvent", "StartDeskshareEvent", "SharePresentationEvent"]) - item['$'].timestamp;
+                images.push({path: image, loop: 1, video_ignored: false, ignored_loop_param: time});
+                break;
+            }
+            case "DeskShareStartRTMP": {
+                let image = "./default.png";
+                let time = find_next(events, i, ["StartDeskshareEvent"]) - item['$'].timestamp;
+                images.push({path: image, loop: 1, video_ignored: false, ignored_loop_param: time});
+                break;
+            }
+            case "StartDeskshareEvent": {
+                let path = "./default.png";
+                let time = find_next(events, i, ["DeskShareStopRTMP"]) - item['$'].timestamp;
+                images.push({path: path, loop: 1, video_ignored: true, ignored_loop_param: time});
                 break;
             }
             case "PublicChatEvent": {
                 if (chat) {
-
+                    let message = item.message[0];
+                    chatmessages.push(chatCount);
+                    chatmessages.push(parse_to_srt_timestamp(item['$'].timestamp - events[0]['$'].timestamp));
+                    chatmessages.push(`${message}\n`);
+                    chatCount++;
                 }
+                break;
             }
         }
+        bar1.update(i)
     }
-    console.log(times);
+    bar1.stop();
+    if (chat) fs.writeFileSync(`${path}/${name}.srt`, chatmessages.join("\n"));
     return images;
 }
 
-function make_images(images, path, cache,check) {
+function parse_to_srt_timestamp(time) {
+    let milli = time % 1000;
+    time = time / 1000;
+    let min = Math.floor(time / 60) % 60, hour = Math.floor(time / 3600) % 3600, seconds = Math.floor(time % 60);
+    return `${hour}:${min}:${seconds},${milli} --> ${hour}:${min}:${seconds + 3},${milli}`;
+}
+
+function video_ffmpeg_loop_promise(path, loop, i) {
+    return new Promise(((resolve, reject) => {
+        FfmpegCommand()
+            .format('mp4')
+            .on('error', (err) => reject(err.message))
+            .on('end', resolve)
+            .addOption('-threads 4')
+            .addOption('-preset ultrafast')
+            .input(`${path}/temp/tempp${i}.mp4`)
+            .inputOptions([`-stream_loop ${Math.round(loop)}`])
+            .save(`${path}/temp/finaltempp${i}.mp4`);
+    }))
+}
+
+function make_video(images, path, cache, check) {
     return new Promise(async (resolve, reject) => {
         let video = [], loopSum = 0;
-        for (let i = 0; i < images.length; i++) loopSum += images[i].ignored_loop_param;
-        if(loopSum!==check){
-            console.error("times doesn't match");
-            console.log(loopSum,"!==",check);
-            return ;
+        for (let i = 0; i < images.length; i++) loopSum += images[i].ignored_loop_param + 1;
+        if (loopSum !== check) {
+            //console.error("times doesn't match");
+            //console.log(loopSum, "!==", check);
         }
+        const bar2 = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
+        bar2.start(images.length, 0);
         for (let i = 0; i < images.length; i++) {
-            if (cache || !fs.existsSync(`${path}/tempp${i}.mp4`)) {
-                let loop = images[i].ignored_loop_param;
-
-                await images_to_viceo(images[i], path, i);
-                let ffmpegCommand = ffmpeg_command().input(`${path}/tempp${i}.mp4`).inputOptions([`-stream_loop ${Math.abs(Math.round(loop))}`]);
-                await ffmpegCommand.save(`${path}/finaltempp${i}.mp4`);
-                video.push(`${path}/finaltempp${i}.mp4`);
+            if (cache || !fs.existsSync(`${path}/temp/tempp${i}.mp4`)) {
+                if (!images[i].video_ignored) {
+                    let test, loop = (images[i].ignored_loop_param) / 1000;
+                    if (loop < 1) {
+                        test = {path: images[i].path, loop: loop};
+                        await images_to_video(images[i], path, i);
+                    } else {
+                        test = images[i];
+                        loop -= 1;
+                        await images_to_video(images[i], path, i);
+                        await video_ffmpeg_loop_promise(path, loop, i);
+                    }
+                } else {
+                    let loop = (images[i].ignored_loop_param - 1000) / 1000;
+                    await images_to_video(images[i], path, i);
+                    await video_ffmpeg_loop_promise(path, loop, i);
+                }
             }
-            console.log(i / images.length * 100)
+            video.push(`${path}/temp/finaltempp${i}.mp4`);
+            bar2.update(i);
         }
-
+        bar2.stop();
         resolve(video)
     });
 }
 
-function find_next_slide(events, k) {
-    for (let i = k + 1; i < events.length; i++) {
-        let item = events[i];
-        if (item['$'].eventname === "GotoSlideEvent"||item['$'].eventname==="StartDeskshareEvent"||item['$'].eventname==="SharePresentationEvent") {
-            return item['$'].timestamp;
-        }
-    }
-    return events[events.length-1]['$'].timestamp;
-
+function find_next(events, k, find) {
+    for (let i = k + 1; i < events.length; i++) if (find.includes(events[i]['$'].eventname)) return events[i]['$'].timestamp;
+    return events[events.length - 1]['$'].timestamp;
 }
