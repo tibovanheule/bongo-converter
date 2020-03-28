@@ -11,72 +11,120 @@ const fs = require('fs'),
         {name: 'chat', description: "type yes to output chat as subtitle. (default:yes)", default: "yes"},
         {name: 'cache', description: "Overwrite cache if exist? (default:no)", default: "no"},
         {name: 'webcam', description: "Should webcam footage be included? (default:no)", default: "no"}
-    ];
-
-prompt.start();
-
-// Prompt and get user input then display those data in console.
-prompt.get(prompt_attributes, async (err, result) => {
-    if (err) return 1;
-    else {
-        let parser = new xml2js.Parser(),
-            chat = result.chat.toLowerCase() === "yes",
-            path = result.path.toString() === "" ? "C:\\Users\\seven\\Desktop" : result.path,
-            cache = result.cache.toLowerCase() === "yes",
-            webcam = result.webcam.toLowerCase() === "yes";
-        if (!fs.existsSync(path + "/temp")) fs.mkdirSync(path + "/temp/");
-
-        if (chat) keptEvents.push("PublicChatEvent");
-        //conversie xml to json
-        console.log("reading xml-data from: " + path + "/meetingFiles/events.xml");
-
-        // vind de ndige bestanden
-        let test = fs.readFileSync(path + '/spa-build/index.html', "utf8");
-        let index = test.toString().indexOf("data-path=\"video\">../meetingFiles/");
-        // hou enkel het relevante smijt de rest gewoon weg
-        test = test.slice(index, index + 500);
-        let webcamvideo = test.toString().match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
-        let screenvideo = test.toString().match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
-        console.log(`Video's have been found:\n - ${webcamvideo}\n - ${screenvideo}`);
-        // read events
-        let json = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
-
-        let name = json.meeting[0]['$'].name,
-            events = json.event;
-
-        //keep only relevent events for processing, let's save some memory
-        events = events.filter(item => keptEvents.includes(item['$'].eventname));
-
-
-        // alle nodige images verkrijgen + chat regelen
-        let images = await handle_events(events, path, chat, name);
-
-        console.log("Done reading xml \nPreparing image to video conversion");
-
-        //maak van elke afbeelding een gepaste video dan mergen naar 1 groot bestand
-        let videos = await make_video(images, path, cache, screenvideo);
-        console.log("Merging all videos");
-        await (new Promise((resolve, reject) => videos.reduce((result, input) => result.input(input), FfmpegCommand())
-                .format('mp4')
-                .on('end', resolve)
-                .on('error', (err,a,b) => reject('An error occurred: ' + err.message + b))
-                .on('progress', (p) => console.log(p.timemark))
-                .addOption('-preset ultrafast')
-                .addOptions(['-threads 4'])
-                .mergeToFile(`${path}/temp/tempPresentation2.mp4`))
-        );
-
-        if (!webcam) {
-            FfmpegCommand()
-                .addOption('-c copy')
-                .input(`${path}/temp/tempPresentation2.mp4`)
-                .input(`${path}/meetingFiles/${webcamvideo}`)
-                // enkel audio toevoegen
-                .addOptions(['-map 0:v', '-map 1:a'])
-                .save(`${path}/${name}.mp4`);
+    ],
+    myArgs = process.argv.slice(2);
+if (myArgs.length === 0) {
+    prompt.start();
+    // Prompt and get user input then display those data in console.
+    prompt.get(prompt_attributes, (err, result) => {
+        if (err) return 1;
+        else {
+            let chat = result.chat.toLowerCase() === "yes",
+                path = result.path.toString() === "" ? "C:\\Users\\seven\\Desktop" : result.path,
+                cache = result.cache.toLowerCase() === "yes",
+                webcam = result.webcam.toLowerCase() === "yes";
+            main(chat, path, cache, webcam).then(() => console.log("exit"))
         }
+    });
+} else {
+    let chat = true, path = "", cache = false, webcam, i = 0, required = false;
+    while (i < myArgs.length) {
+        let it = myArgs[i];
+        switch (it) {
+            case '-p': {
+                required = true;
+                if(i+1>=myArgs.length) {
+                    required = false;
+                    break;
+                }
+                path = myArgs[i + 1].toString() === "" ? "C:\\Users\\seven\\Desktop" : myArgs[i + 1].toString();
+                i++;
+                break;
+            }
+            case '-nc': {
+                chat = false;
+                break;
+            }
+            case '-oc': {
+                cache = true;
+                break;
+            }
+            case '-w': {
+                webcam = true;
+                break;
+            }
+        }
+        i++;
     }
-});
+    if (required) {
+        if (fs.existsSync(path)) main(chat, path, cache, webcam).then(() => console.log("exit"));
+        else console.log("invalid path!");
+    } else {
+        console.log("invalid arguments");
+        console.log("please specify your path\n -p your_path\t option to specify path");
+        console.log("-oc\toption to override your cache\n-w\tinclude webcam (default no)\n-nc\tdon't make chat subtitles");
+    }
+}
+
+async function main(chat, path, cache, webcam) {
+
+    let parser = new xml2js.Parser();
+
+    if (!fs.existsSync(path + "/temp")) fs.mkdirSync(path + "/temp/");
+
+    if (chat) keptEvents.push("PublicChatEvent");
+    //conversie xml to json
+    console.log("reading xml-data from: " + path + "/meetingFiles/events.xml");
+
+    // vind de ndige bestanden
+    let test = fs.readFileSync(path + '/spa-build/index.html', "utf8");
+    let index = test.toString().indexOf("data-path=\"video\">../meetingFiles/");
+    // hou enkel het relevante smijt de rest gewoon weg
+    test = test.slice(index, index + 500);
+    let webcamvideo = test.toString().match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
+    let screenvideo = test.toString().match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
+    console.log(`Video's have been found:\n - ${webcamvideo}\n - ${screenvideo}`);
+    // read events
+    let json = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
+
+    let name = json.meeting[0]['$'].name,
+        events = json.event;
+
+    //keep only relevent events for processing, let's save some memory
+    events = events.filter(item => keptEvents.includes(item['$'].eventname));
+
+
+    // alle nodige images verkrijgen + chat regelen
+    let images = await handle_events(events, path, chat, name);
+
+    console.log("Done reading xml \nPreparing image to video conversion");
+
+    //maak van elke afbeelding een gepaste video dan mergen naar 1 groot bestand
+    let videos = await make_video(images, path, cache, screenvideo);
+    console.log("Merging all videos");
+    await (new Promise((resolve, reject) => videos.reduce((result, input) => result.input(input), FfmpegCommand())
+            .format('mp4')
+            .on('end', resolve)
+            .on('error', reject)
+            .on('stderr', (stderrLine) => console.log('Stderr output: ' + stderrLine))
+            .on('progress', (p) => console.log(p.timemark))
+            .addOption('-preset ultrafast')
+            .addOption('-threads 4')
+            .mergeToFile(`${path}/temp/tempPresentation2.mp4`))
+    );
+
+    if (!webcam) {
+        FfmpegCommand()
+            .addOption('-c copy')
+            .input(`${path}/temp/tempPresentation2.mp4`)
+            .input(`${path}/meetingFiles/${webcamvideo}`)
+            // enkel audio toevoegen
+            .addOptions(['-map 0:v', '-map 1:a'])
+            .save(`${path}/${name}.mp4`);
+    } else {
+        console.error("Not yet implemented, pls run again without webcam/overwriting cache")
+    }
+}
 
 //Quick and dirty helpers function to get all unique eventsnames
 function get_all_unique_event_names(events) {
@@ -96,7 +144,7 @@ function images_to_video(images, i, name) {
     return new Promise((resolve, reject) => {
         videoshow([images], videoOptions)
             .option('-preset ultrafast')
-            .complexFilter('scale=1920x1080,setdar=1:1')
+            .complexFilter('scale=1920x1080,setdar=16:9')
             .save(name)
             .on('error', reject)
             .on('end', () => resolve(name))
@@ -216,7 +264,7 @@ function make_video(images, path, cache, screen) {
                             .input(`${path}/meetingFiles/${screen}`)
                             .on('end', resolve1)
                             .on('error', (e) => reject1(e))
-                            .complexFilter('scale=1920x1080,setdar=1:1')
+                            .complexFilter('scale=1920x1080,setdar=16:9')
                             .addOption(`-ss ${hour}:${min}:${seconds}`)
                             .addOption(`-t ${thour}:${tmin}:${tseconds}`)
                             .save(`${path}/temp/finaltempp${i}.mp4`)
