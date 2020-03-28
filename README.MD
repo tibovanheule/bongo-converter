@@ -18,6 +18,7 @@ run: `node index.js -p your_path`
 - -oc: overwrite cache (default no)
 - -w: include webcam footage (default no)
 - -nc: don't make chat subtitles
+- -o: specify output folder : optional
 
 # donations
 https://www.buymeacoffee.com/tibovanheule
