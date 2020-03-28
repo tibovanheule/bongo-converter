@@ -27,13 +27,13 @@ if (myArgs.length === 0) {
         }
     });
 } else {
-    let chat = true, path = "", cache = false, webcam, i = 0, required = false, invalid_ouput=false,output_path="";
+    let chat = true, path = "", cache = false, webcam, i = 0, required = false, invalid_ouput = false, output_path = "";
     while (i < myArgs.length) {
         let it = myArgs[i];
         switch (it) {
             case '-p': {
                 required = true;
-                if(i+1>=myArgs.length) {
+                if (i + 1 >= myArgs.length) {
                     required = false;
                     break;
                 }
@@ -54,7 +54,7 @@ if (myArgs.length === 0) {
                 break;
             }
             case '-o': {
-                if(i+1>=myArgs.length) {
+                if (i + 1 >= myArgs.length) {
                     invalid_ouput = true;
                     break;
                 }
@@ -68,7 +68,7 @@ if (myArgs.length === 0) {
     }
     if (required) {
         if (invalid_ouput) console.log("invalid output directory");
-        else if (fs.existsSync(path)) main(chat, path, cache, webcam,output_path).then(() => console.log("exit"));
+        else if (fs.existsSync(path)) main(chat, path, cache, webcam, output_path).then(() => console.log("exit"));
         else console.log("invalid path!");
     } else {
         console.log("invalid arguments");
@@ -77,7 +77,7 @@ if (myArgs.length === 0) {
     }
 }
 
-async function main(chat, path, cache, webcam,output) {
+async function main(chat, path, cache, webcam, output) {
 
     let parser = new xml2js.Parser();
 
@@ -93,7 +93,10 @@ async function main(chat, path, cache, webcam,output) {
     // hou enkel het relevante smijt de rest gewoon weg
     test = test.slice(index, index + 500);
     let webcamvideo = test.toString().match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
-    let screenvideo = test.toString().match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
+    let screenvideo = "";
+    if (test.toString().indexOf("slave-video") > 0){
+        screenvideo = test.toString().match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
+    }
     console.log(`Video's have been found:\n - ${webcamvideo}\n - ${screenvideo}`);
     // read events
     let json = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
@@ -123,8 +126,11 @@ async function main(chat, path, cache, webcam,output) {
             .addOption('-threads 4')
             .mergeToFile(`${path}/temp/tempPresentation2.mp4`))
     );
-    if(output !== ""){output =`${output}/${name}.mp4` }
-    else {output = `${path}/${name}.mp4`}
+    if (output !== "") {
+        output = `${output}/${name}.mp4`
+    } else {
+        output = `${path}/${name}.mp4`
+    }
     if (!webcam) {
         FfmpegCommand()
             .addOption('-c copy')
