@@ -31,13 +31,13 @@ prompt.get(prompt_attributes, async (err, result) => {
         console.log("reading xml-data from: " + path + "/meetingFiles/events.xml");
 
         // vind de ndige bestanden
-        let test = fs.readFileSync(path + '/spa-build/index.html',"utf8");
+        let test = fs.readFileSync(path + '/spa-build/index.html', "utf8");
         let index = test.toString().indexOf("data-path=\"video\">../meetingFiles/");
         // hou enkel het relevante smijt de rest gewoon weg
-        test = test.slice(index,index+500);
+        test = test.slice(index, index + 500);
         let webcamvideo = test.toString().match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
         let screenvideo = test.toString().match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
-
+        console.log(`Video's have been found:\n - ${webcamvideo}\n - ${screenvideo}`);
         // read events
         let json = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
 
@@ -54,12 +54,12 @@ prompt.get(prompt_attributes, async (err, result) => {
         console.log("Done reading xml \nPreparing image to video conversion");
 
         //maak van elke afbeelding een gepaste video dan mergen naar 1 groot bestand
-        let videos = await make_video(images, path, cache);
+        let videos = await make_video(images, path, cache, screenvideo);
         console.log("Merging all videos");
         await (new Promise((resolve, reject) => videos.reduce((result, input) => result.input(input), FfmpegCommand())
                 .format('mp4')
                 .on('end', resolve)
-                .on('error', (err) => reject('An error occurred: ' + err.message))
+                .on('error', (err,a,b) => reject('An error occurred: ' + err.message + b))
                 .on('progress', (p) => console.log(p.timemark))
                 .addOption('-preset ultrafast')
                 .addOptions(['-threads 4'])
@@ -91,10 +91,12 @@ function get_all_unique_event_names(events) {
 function images_to_video(images, i, name) {
     let videoOptions = {
         transition: false,
+        fps: 30
     };
     return new Promise((resolve, reject) => {
         videoshow([images], videoOptions)
             .option('-preset ultrafast')
+            .complexFilter('scale=1920x1080,setdar=1:1')
             .save(name)
             .on('error', reject)
             .on('end', () => resolve(name))
@@ -138,7 +140,12 @@ async function handle_events(events, path, chat, name) {
             case "StartDeskshareEvent": {
                 let path = "./default.png";
                 let time = find_next(events, i, ["DeskShareStopRTMP"]) - item['$'].timestamp;
-                images.push({path: path, loop: 1, video_ignored: true, ignored_loop_param: time});
+                images.push({
+                    path: path,
+                    video_ignored: true,
+                    ignored_loop_param: time,
+                    start: item['$'].timestamp - events[0]['$'].timestamp
+                });
                 break;
             }
             case "PublicChatEvent": {
@@ -180,18 +187,14 @@ function video_ffmpeg_loop_promise(path, loop, i) {
     }))
 }
 
-function make_video(images, path, cache, check) {
+function make_video(images, path, cache, screen) {
     return new Promise(async (resolve, reject) => {
         let video = [], loopSum = 0;
-        for (let i = 0; i < images.length; i++) loopSum += images[i].ignored_loop_param + 1;
-        if (loopSum !== check) {
-            //console.error("times doesn't match");
-            //console.log(loopSum, "!==", check);
-        }
+
         const bar2 = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
         bar2.start(images.length, 0);
         for (let i = 0; i < images.length; i++) {
-            if (cache || !fs.existsSync(`${path}/temp/tempp${i}.mp4`)) {
+            if (cache || !fs.existsSync(`${path}/temp/finaltempp${i}.mp4`)) {
                 if (!images[i].video_ignored) {
                     let test, loop = (images[i].ignored_loop_param) / 1000;
                     if (loop < 1) {
@@ -204,9 +207,20 @@ function make_video(images, path, cache, check) {
                         await video_ffmpeg_loop_promise(path, loop, i);
                     }
                 } else {
-                    let loop = (images[i].ignored_loop_param - 1000) / 1000;
-                    await images_to_video(images[i], i, `${path}/temp/tempp${i}.mp4`);
-                    await video_ffmpeg_loop_promise(path, loop, i);
+                    let duration = (images[i].ignored_loop_param - 1000) / 1000, start = images[i].start / 1000;
+                    let min = Math.floor(start / 60) % 60, hour = Math.floor(start / 3600) % 3600,
+                        seconds = Math.floor(start % 60);
+                    let tmin = Math.floor(duration / 60) % 60, thour = Math.floor(duration / 3600) % 3600,
+                        tseconds = Math.floor(duration % 60);
+                    await (new Promise(((resolve1, reject1) => FfmpegCommand()
+                            .input(`${path}/meetingFiles/${screen}`)
+                            .on('end', resolve1)
+                            .on('error', (e) => reject1(e))
+                            .complexFilter('scale=1920x1080,setdar=1:1')
+                            .addOption(`-ss ${hour}:${min}:${seconds}`)
+                            .addOption(`-t ${thour}:${tmin}:${tseconds}`)
+                            .save(`${path}/temp/finaltempp${i}.mp4`)
+                    )));
                 }
             }
             video.push(`${path}/temp/finaltempp${i}.mp4`);
