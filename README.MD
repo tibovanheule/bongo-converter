@@ -1,4 +1,6 @@
 # bongo to mp4 converter
+## What is this?
+Bongo is a great platform to perform virtual class room meetings but has one great flaw. The downloads are a stupid non-portable non-cross-platform html-page built by react in a stupid zip. This can be easily converted to a less enormous file using some node js and ffmpeg, so it is great to install this script on your server! 
 ## how to install?
 1. install ffmpeg (see [ffmpeg.org](https://ffmpeg.org))
 2. install node js.
