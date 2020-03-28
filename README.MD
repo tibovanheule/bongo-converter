@@ -1,10 +1,21 @@
 # bongo to mp4 converter
-1. install ffmpeg (see ffmpeg.org)
+## how to install?
+1. install ffmpeg (see [ffmpeg.org](https://ffmpeg.org))
+2. install node js.
 2. run: npm install (first time only)
-3. run: node index.js
-4. enter you path to your bongo files
-5. enter yes if you want to include chat in the video
-6. wait
+## how to convert a bongo zip download?
+### Prompt
+1. run command: `node index.js`
+2. a prompt will ask for a path to a bongo folder
+3. type yes to include chat
+4. type yes to overwrite cache (if any)
+5. type yes to include webcam footage
+### command line arguments
+run: `node index.js -p your_path`
+- -p your_path: option to specify path to bongo folder REQUIRED
+- -oc: overwrite cache (default no)
+- -w: include webcam footage (default no)
+- -nc: don't make chat subtitles
 
 # donations
 https://www.buymeacoffee.com/tibovanheule

@@ -1,7 +1,7 @@
 {
   "name": "bongo_transcoder",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.5.0",
+  "description": "Converter",
   "main": "index.js",
   "scripts": {
     "test": "node index.js"
