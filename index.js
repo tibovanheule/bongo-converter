@@ -27,7 +27,7 @@ if (myArgs.length === 0) {
         }
     });
 } else {
-    let chat = true, path = "", cache = false, webcam, i = 0, required = false;
+    let chat = true, path = "", cache = false, webcam, i = 0, required = false, invalid_ouput=false,output_path="";
     while (i < myArgs.length) {
         let it = myArgs[i];
         switch (it) {
@@ -53,11 +53,22 @@ if (myArgs.length === 0) {
                 webcam = true;
                 break;
             }
+            case '-o': {
+                if(i+1>=myArgs.length) {
+                    invalid_ouput = true;
+                    break;
+                }
+                output_path = myArgs[i + 1].toString() === "" ? "" : myArgs[i + 1].toString();
+                if (!fs.existsSync(output_path)) fs.mkdirSync(output_path);
+                i++;
+                break;
+            }
         }
         i++;
     }
     if (required) {
-        if (fs.existsSync(path)) main(chat, path, cache, webcam).then(() => console.log("exit"));
+        if (invalid_ouput) console.log("invalid output directory");
+        else if (fs.existsSync(path)) main(chat, path, cache, webcam).then(() => console.log("exit"));
         else console.log("invalid path!");
     } else {
         console.log("invalid arguments");
@@ -66,7 +77,7 @@ if (myArgs.length === 0) {
     }
 }
 
-async function main(chat, path, cache, webcam) {
+async function main(chat, path, cache, webcam,output) {
 
     let parser = new xml2js.Parser();
 
@@ -144,7 +155,7 @@ function images_to_video(images, i, name) {
     return new Promise((resolve, reject) => {
         videoshow([images], videoOptions)
             .option('-preset ultrafast')
-            .complexFilter('scale=1920x1080,setdar=16:9')
+            .complexFilter('scale=1920x1080,setdar=1:1')
             .save(name)
             .on('error', reject)
             .on('end', () => resolve(name))
@@ -264,7 +275,7 @@ function make_video(images, path, cache, screen) {
                             .input(`${path}/meetingFiles/${screen}`)
                             .on('end', resolve1)
                             .on('error', (e) => reject1(e))
-                            .complexFilter('scale=1920x1080,setdar=16:9')
+                            .complexFilter('scale=1920x1080,setdar=1:1')
                             .addOption(`-ss ${hour}:${min}:${seconds}`)
                             .addOption(`-t ${thour}:${tmin}:${tseconds}`)
                             .save(`${path}/temp/finaltempp${i}.mp4`)
