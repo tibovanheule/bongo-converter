@@ -68,7 +68,7 @@ if (myArgs.length === 0) {
     }
     if (required) {
         if (invalid_ouput) console.log("invalid output directory");
-        else if (fs.existsSync(path)) main(chat, path, cache, webcam).then(() => console.log("exit"));
+        else if (fs.existsSync(path)) main(chat, path, cache, webcam,output_path).then(() => console.log("exit"));
         else console.log("invalid path!");
     } else {
         console.log("invalid arguments");
@@ -123,7 +123,8 @@ async function main(chat, path, cache, webcam,output) {
             .addOption('-threads 4')
             .mergeToFile(`${path}/temp/tempPresentation2.mp4`))
     );
-
+    if(output !== ""){output =`${output}/${name}.mp4` }
+    else {output = `${path}/${name}.mp4`}
     if (!webcam) {
         FfmpegCommand()
             .addOption('-c copy')
@@ -131,7 +132,7 @@ async function main(chat, path, cache, webcam,output) {
             .input(`${path}/meetingFiles/${webcamvideo}`)
             // enkel audio toevoegen
             .addOptions(['-map 0:v', '-map 1:a'])
-            .save(`${path}/${name}.mp4`);
+            .save(output);
     } else {
         console.error("Not yet implemented, pls run again without webcam/overwriting cache")
     }
