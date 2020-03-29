@@ -89,8 +89,8 @@ async function main(chat, path, cache, webcam, output) {
 
     // vind de ndige bestanden
     let test = fs.readFileSync(path + '/spa-build/index.html', "utf8").toString();
-    let webcamvideo = test.indexOf("data-path=\"video\">../meetingFiles/") > 0 ? test.match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video : "";
-    let screenvideo = test.indexOf("slave-video") > 0 ? test.match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video : "";
+    let webcamvideo = test.indexOf("data-path=\"video\">../meetingFiles/") > 0 ? test.match(/"video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video : "";
+    let screenvideo = test.indexOf("slave-video") > 0 ? test.match(/"slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video : "";
 
     console.log(`Video's have been found:\n - ${webcamvideo}\n - ${screenvideo}`);
 // read events
