@@ -88,32 +88,27 @@ async function main(chat, path, cache, webcam, output) {
     console.log("reading xml-data from: " + path + "/meetingFiles/events.xml");
 
     // vind de ndige bestanden
-    let test = fs.readFileSync(path + '/spa-build/index.html', "utf8");
-    let index = test.toString().indexOf("data-path=\"video\">../meetingFiles/");
-    // hou enkel het relevante smijt de rest gewoon weg
-    test = test.slice(index, index + 500);
-    let webcamvideo = test.toString().match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
-    let screenvideo = "";
-    if (test.toString().indexOf("slave-video") > 0){
-        screenvideo = test.toString().match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video;
-    }
+    let test = fs.readFileSync(path + '/spa-build/index.html', "utf8").toString();
+    let webcamvideo = test.indexOf("data-path=\"video\">../meetingFiles/") > 0 ? test.match(/video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video : "";
+    let screenvideo = test.indexOf("slave-video") > 0 ? test.match(/slave-video">..\/meetingFiles\/(?<video>[.A-Z_0-9a-z]*)<\/script>/i).groups.video : "";
+
     console.log(`Video's have been found:\n - ${webcamvideo}\n - ${screenvideo}`);
-    // read events
+// read events
     let json = (await parser.parseStringPromise(fs.readFileSync(path + '/meetingFiles/events.xml'))).recording;
 
     let name = json.meeting[0]['$'].name,
         events = json.event;
 
-    //keep only relevent events for processing, let's save some memory
+//keep only relevent events for processing, let's save some memory
     events = events.filter(item => keptEvents.includes(item['$'].eventname));
 
 
-    // alle nodige images verkrijgen + chat regelen
+// alle nodige images verkrijgen + chat regelen
     let images = await handle_events(events, path, chat, name);
 
     console.log("Done reading xml \nPreparing image to video conversion");
 
-    //maak van elke afbeelding een gepaste video dan mergen naar 1 groot bestand
+//maak van elke afbeelding een gepaste video dan mergen naar 1 groot bestand
     let videos = await make_video(images, path, cache, screenvideo);
     console.log("Merging all videos");
     await (new Promise((resolve, reject) => videos.reduce((result, input) => result.input(input), FfmpegCommand())
