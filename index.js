@@ -26,7 +26,8 @@ const fs = require('fs'),
         default: "no"
     }],
     myArgs = process.argv.slice(2);
-let gpu_enabled = false;
+let gpu_enabled = false,
+    threadcount=8;
 
 if (myArgs.length === 0) {
     prompt.start();
@@ -160,6 +161,7 @@ async function main(chat, path, cache, webcam, output) {
     let videos = await make_video(images, path, cache, screenvideo);
     console.log("Merging all videos");
     if (gpu_enabled) {
+        // console.log("Merg ffmpeg GPU");
         await (new Promise(
             (resolve, reject) =>
             videos
@@ -184,7 +186,7 @@ async function main(chat, path, cache, webcam, output) {
                 (stderrLine) => console.log('Stderr output: ' + stderrLine))
             .on('progress', (p) => console.log(p.timemark))
             .addOption('-preset ultrafast')
-            .addOption('-threads 4')
+            .addOption(`-threads ${threadcount}`)
             .mergeToFile(`${path}/temp/tempPresentation2.mp4`)));
     }
     if (output !== "") {
@@ -194,6 +196,7 @@ async function main(chat, path, cache, webcam, output) {
     }
     if (!webcam) {
         if (gpu_enabled) {
+            // console.log("Fixing webcam, ffmpeg GPU");
             FfmpegCommand()
                 .addOption('-c copy')
                 .input(`${path}/temp/tempPresentation2.mp4`)
@@ -233,13 +236,12 @@ function images_to_video(images, i, name) {
         transition: false,
         fps: 30
     };
-    if (gpu_enabled) {
-        videoOptions['videoCodec'] = 'h264_nvenc'
-    };
     return new Promise(
         (resolve, reject) => {
             videoshow([images], videoOptions)
                 .complexFilter('scale=1920x1080,setdar=1:1')
+                .option('-preset ultrafast')
+                .option(`-threads ${threadcount}`)
                 .save(name)
                 .on('error', reject)
                 .on('end', () => resolve(name))
@@ -355,6 +357,7 @@ function parse_to_srt_timestamp(time) {
 
 function video_ffmpeg_loop_promise(path, loop, i) {
     if (gpu_enabled) {
+        // console.log("Video ffmpeg loop GPU");
         return new Promise(((resolve, reject) => {
             FfmpegCommand()
                 .format('mp4')
@@ -362,6 +365,7 @@ function video_ffmpeg_loop_promise(path, loop, i) {
                 .on('end', resolve)
                 .input(`${path}/temp/tempp${i}.mp4`)
                 .withVideoCodec('h264_nvenc')
+                .addOption(`-threads ${threadcount}`)
                 .inputOptions([`-stream_loop ${Math.round(loop)}`])
                 .save(`${path}/temp/finaltempp${i}.mp4`);
         }))
@@ -371,7 +375,7 @@ function video_ffmpeg_loop_promise(path, loop, i) {
                 .format('mp4')
                 .on('error', (err) => reject(err.message))
                 .on('end', resolve)
-                .addOption('-threads 4')
+                .addOption(`-threads ${threadcount}`)
                 .addOption('-preset ultrafast')
                 .input(`${path}/temp/tempp${i}.mp4`)
                 .inputOptions([`-stream_loop ${Math.round(loop)}`])
@@ -421,6 +425,7 @@ function make_video(images, path, cache, screen) {
                                 .input(`${path}/meetingFiles/${screen}`)
                                 .on('end', resolve1)
                                 .on('error', (e) => reject1(e))
+                                .withVideoCodec('h264_nvenc')
                                 .complexFilter('scale=1920x1080,setdar=1:1')
                                 .addOption(`-ss ${hour}:${min}:${seconds}`)
                                 .addOption(`-t ${thour}:${tmin}:${tseconds}`)
@@ -430,7 +435,6 @@ function make_video(images, path, cache, screen) {
                             ((resolve1, reject1) =>
                                 FfmpegCommand()
                                 .input(`${path}/meetingFiles/${screen}`)
-                                .withVideoCodec('h264_nvenc')
                                 .on('end', resolve1)
                                 .on('error', (e) => reject1(e))
                                 .complexFilter('scale=1920x1080,setdar=1:1')
